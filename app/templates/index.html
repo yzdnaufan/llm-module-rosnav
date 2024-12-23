@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Text Translator</title>
+</head>
+<body>
+    <h1>Translate Text to JSON Commands</h1>
+    <form id="translation-form">
+        <label for="input-text">Enter text to translate:</label><br>
+        <textarea id="input-text" rows="4" cols="50" required></textarea><br>
+        <button type="submit">Translate</button>
+    </form>
+    <h2>Translation Result:</h2>
+    <pre id="result"></pre>
+
+    <script>
+        const form = document.getElementById('translation-form');
+        form.onsubmit = async (event) => {
+            event.preventDefault();
+            const inputText = document.getElementById('input-text').value;
+            const response = await fetch('/translate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: inputText }),
+            });
+            const result = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+        };
+    </script>
+</body>
+</html>
