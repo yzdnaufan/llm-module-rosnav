@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.command import TranslationRequest, TranslationResponse
-from app.src import llm # Assuming this function is defined in llm.py
+from models.command import TranslationRequest, TranslationResponse
+from src import llm # Assuming this function is defined in llm.py
 
 router = APIRouter()
 

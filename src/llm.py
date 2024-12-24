@@ -15,7 +15,7 @@ from langgraph.prebuilt import create_react_agent
 
 from dotenv import load_dotenv
 
-from app.models.command import Command, TranslationResponse
+from models.command import Command, TranslationResponse
 
 load_dotenv()
 
@@ -34,6 +34,29 @@ for var in required_vars:
 # Now you can safely use os.environ to access your environment variables
 langchain_api = os.environ['LANGCHAIN_API_KEY']
 openai_api = os.environ['OPENAI_API_KEY']
+tavily_api = os.environ['TAVILY_API_KEY']
+
+# Initialize the ChatOpenAI object
+
+llm = ChatOpenAI(
+    api_key=openai_api,
+    model=MODEL,
+    temperature=TEMPERATURE,
+    max_retries=MAX_RETRIES,
+    max_tokens=MAX_TOKENS
+)
+
+# Initialize the TavilySearchResults object
+tavily = TavilySearchResults(api_key=tavily_api)
+
+# Initialize the MemorySaver object
+memory = MemorySaver()
+
+# Initialize the StateGraph object
+graph = StateGraph()
+
+# Initialize the ReactAgent object
+agent = create_react_agent()
 
 def translate_to_command(text:str) -> Dict[str, Any] : {
 
