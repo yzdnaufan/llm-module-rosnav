@@ -15,7 +15,7 @@ from langgraph.prebuilt import create_react_agent
 
 from dotenv import load_dotenv
 
-from models.command import Command, TranslationResponse
+from models.command import Translation
 
 load_dotenv()
 
@@ -46,20 +46,29 @@ llm = ChatOpenAI(
     max_tokens=MAX_TOKENS
 )
 
-# Initialize the TavilySearchResults object
-tavily = TavilySearchResults(api_key=tavily_api)
+# # Initialize the TavilySearchResults object
+# tavily = TavilySearchResults(api_key=tavily_api)
 
-# Initialize the MemorySaver object
-memory = MemorySaver()
+# # Initialize the MemorySaver object
+# memory = MemorySaver()
 
-# Initialize the StateGraph object
-graph = StateGraph()
+# # Initialize the StateGraph object
+# graph = StateGraph()
 
-# Initialize the ReactAgent object
-agent = create_react_agent()
+# # Initialize the ReactAgent object
+# agent = create_react_agent()
 
-def translate_to_command(text:str) -> Dict[str, Any] : {
-
-
-}
+def translate_to_command(text:str) -> Dict[str, Any] : 
+    structured_llm = llm.with_structured_output(Translation)
+    response = structured_llm.invoke(text)
+    if response is None:
+        return {
+            "command": "error",
+            "text": "Sorry, I could not understand the command."
+        }
+    
+    return {
+        'text' : text,
+        'response' : response
+    }
 

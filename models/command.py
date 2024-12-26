@@ -1,29 +1,34 @@
-from typing import Dict, List
-from pydantic import BaseModel
+from typing import Dict, List, Optional, Literal
 
-class Command(BaseModel):
+from typing_extensions import Annotated, TypedDict
+from pydantic import BaseModel, Field
+
+class CommandParameters(TypedDict):
     """
-    Command model representing a parsed command from text.
+    CommandParameters model to represent the parameters of a command.
+    """
+    target: Annotated[Optional[Literal['lecturer_room', 'lab_ai', 'coworking_space']], None, "The target of place of the command, using variable naming style."]
+    context: Annotated[Optional[str], None, "The context of the command."]
+    # intent: Annotated[Optional[str], ..., "The intent explanation of the command."]
 
+class Command(TypedDict):
+    """
+    Command model to represent a command.
+    """
+    isNav: Annotated[bool, ..., "Is the command a navigation command?"]
+    parameters: Annotated[CommandParameters, ..., "The parameters of the command."]
+
+class Translation(TypedDict):
+    """
+    Translation model to represent a translation.
     Attributes:
-        text (str): The original text of the command.
-        action (str): The action to be performed.
-        confidence (float): The confidence level of the command parsing.
-        parameters (Dict[str, str]): Additional parameters for the command.
+        text (str): The translated text.
+        source_language (str): The source language of the text.
+        target_language (str): The target language of the text.
     """
-    text: str
-    action: str
-    confidence: float
-    parameters: Dict[str, str]
-
-class TranslationResponse(BaseModel):
-    """
-    TranslationResponse model representing the response of the translation.
-
-    Attributes:
-        commands (List[Command]): A list of parsed commands.
-    """
-    commands: List[Command]
+    source_language: Annotated[str, ...,"The source language of the text."]
+    command: Annotated[Command, ..., "The command to be executed."]
+    confidence: Annotated[float, ..., "The confidence value 0 - 1.0 of the translation into command for robot."]
 
 class TranslationRequest(BaseModel):
     """

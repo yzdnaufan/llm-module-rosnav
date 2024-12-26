@@ -1,0 +1,16 @@
+# Ignore virtual environment
+.venv
+
+# Ignore other unnecessary files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+.DS_Store
+.idea
+.vscode
+node_modules
+
+.env
