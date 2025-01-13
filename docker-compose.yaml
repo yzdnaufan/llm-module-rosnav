@@ -1,0 +1,52 @@
+version: '1'
+services:
+  api:
+    image: proyek-robot:latest
+    environment:
+      OPENAI_API_KEY: /run/secrets/openai_api_key
+      TAVILY_API_KEY: /run/secrets/tavily_api_key
+      LANGCHAIN_PROJECT: /run/secrets/langchain_project
+      LANGCHAIN_API_KEY: /run/secrets/langchain_api_key
+      LANGCHAIN_ENDPOINT: /run/secrets/langchain_endpoint
+      LANGCHAIN_TRACING_V2: /run/secrets/langchain_tracing_v2
+    secrets:
+      - openai_api_key
+      - tavily_api_key
+      - langchain_project
+      - langchain_api_key
+      - langchain_endpoint
+      - langchain_tracing_v2
+    ports:
+      - "8080:8080"
+    networks:
+      - api
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+networks:
+  api:
+    driver: bridge
+secrets:
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt
+  tavily_api_key:
+    file: ./secrets/tavily_api_key.txt
+  langchain_project:
+    file: ./secrets/langchain_project.txt
+  langchain_api_key:
+    file: ./secrets/langchain_api_key.txt
+  langchain_endpoint:
+    file: ./secrets/langchain_endpoint.txt
+  langchain_tracing_v2:
+    file: ./secrets/langchain_tracing_v2.txt

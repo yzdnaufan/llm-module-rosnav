@@ -4,12 +4,12 @@ from fastapi import Request
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter
 
-from routes import translate_command 
+from routes import agent 
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-app.include_router(translate_command.router)
+app.include_router(agent.router)
 
 @app.get("/")
 def read_root(request: Request):

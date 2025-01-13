@@ -1,12 +1,12 @@
 FROM python:3.11-slim
 
-WORKDIR /code
+WORKDIR /app
 
-COPY ./requirements.txt /code/requirements.txt
+COPY ./requirements.txt /app/requirements.txt
 
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 
-COPY ./ /code/
+COPY ./ /app/
 
-CMD ["fastapi", "run", "app/app.py", "--port", "8080"]
+CMD ["fastapi", "run", "src/app.py", "--port", "8080"]
 
