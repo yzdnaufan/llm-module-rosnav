@@ -1,7 +1,7 @@
 import os
 
 from typing import Any, Dict
-from typing_extensions import List, TypedDict, Annotated, Literal
+from typing_extensions import List, TypedDict, Literal
 
 from langchain import hub
 
@@ -12,7 +12,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, SystemMessage, RemoveMessage, AIMessage
+from langchain_core.messages import HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import create_retriever_tool
@@ -22,11 +22,7 @@ from langchain_openai import OpenAIEmbeddings
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from langgraph.checkpoint.memory import MemorySaver
-
-from langgraph.graph import START, MessagesState, StateGraph, END
-
-from langgraph.prebuilt import create_react_agent
+from langgraph.graph import START, StateGraph, END
 
 from pydantic import BaseModel, Field
 
