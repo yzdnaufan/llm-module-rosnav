@@ -35,12 +35,13 @@ import yaml
 load_dotenv()
 
 # Define constants
-MODEL = 'gpt-3.5-turbo'
-GRADE_MODEL = 'gpt-4o'
-EMBEDDING_MODEL = 'text-embedding-3-large'
-TEMPERATURE = 0.5
-MAX_RETRIES = 2
-MAX_TOKENS = 100
+AGENT_MODEL = os.environ.get('AGENT_MODEL')
+GENERATE_MODEL = os.environ.get('GENERATE_MODEL')
+GRADE_MODEL = os.environ.get('GRADE_MODEL')
+EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
+TEMPERATURE = os.environ.get('TEMPERATURE')
+MAX_RETRIES = os.environ.get('MAX_RETRIES')
+MAX_TOKENS = os.environ.get('MAX_TOKENS')
 
 # Prompt
 # Load the YAML file
