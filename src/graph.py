@@ -34,26 +34,26 @@ import yaml
 
 load_dotenv()
 
+# Ensure required environment variables are set
+required_vars = ['LANGCHAIN_API_KEY', 'OPENAI_API_KEY', 'TAVILY_API_KEY' ]
+for var in required_vars:
+    if var not in os.environ:
+        raise EnvironmentError(f"Missing required environment variable: {var}")
+
 # Define constants
-AGENT_MODEL = os.environ.get('AGENT_MODEL')
-GENERATE_MODEL = os.environ.get('GENERATE_MODEL')
-GRADE_MODEL = os.environ.get('GRADE_MODEL')
-EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
-TEMPERATURE = os.environ.get('TEMPERATURE')
-MAX_RETRIES = os.environ.get('MAX_RETRIES')
-MAX_TOKENS = os.environ.get('MAX_TOKENS')
+AGENT_MODEL = os.environ.get('AGENT_MODEL') | 'gpt-3.5-turbo'
+GENERATE_MODEL = os.environ.get('GENERATE_MODEL')  | 'gpt-3.5-turbo' # Agent that used in all flow of the graph
+GRADE_MODEL = os.environ.get('GRADE_MODEL') | 'gpt-3.5-turbo'
+EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL') | 'text-embedding-3-large'
+TEMPERATURE = os.environ.get('TEMPERATURE') | 0.5
+MAX_RETRIES = os.environ.get('MAX_RETRIES') | 2
+MAX_TOKENS = os.environ.get('MAX_TOKENS') | 100
 
 # Prompt
 # Load the YAML file
 with open('prompt.yaml', 'r') as file:
     prompt = yaml.safe_load(file)
 
-
-# Ensure required environment variables are set
-required_vars = ['LANGCHAIN_API_KEY', 'OPENAI_API_KEY', 'TAVILY_API_KEY' ]
-for var in required_vars:
-    if var not in os.environ:
-        raise EnvironmentError(f"Missing required environment variable: {var}")
 
 # Now you can safely use os.environ to access your environment variables
 langchain_api = os.environ['LANGCHAIN_API_KEY']
@@ -64,7 +64,7 @@ tavily_api = os.environ['TAVILY_API_KEY']
 
 llm = ChatOpenAI(
     api_key=openai_api,
-    model=MODEL,
+    model=GENERATE_MODEL,
     temperature=TEMPERATURE,
     max_retries=MAX_RETRIES,
     max_tokens=MAX_TOKENS
@@ -122,8 +122,9 @@ doc_splits = text_splitter.split_documents(docs_list)
 vectorstore = Chroma.from_documents(
     documents=doc_splits,
     collection_name="rag-chroma",
-    embedding=OpenAIEmbeddings(),
+    embedding=OpenAIEmbeddings(model=EMBEDDING_MODEL)
 )
+
 retriever = vectorstore.as_retriever()
 retriever_tool = create_retriever_tool(
     retriever,
@@ -139,7 +140,7 @@ class GradeDocuments(BaseModel):
     """Binary Score relevance check for documents retrieved"""
 
     binary_score: str = Field(description="Documents are relevant to the query,'yes' or 'no'")
-structured_grader = llm.with_structured_output(GradeDocuments)
+structured_grader = grade_llm.with_structured_output(GradeDocuments)
 grade_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", prompt['grader-prompt']),
@@ -151,7 +152,7 @@ retrieval_grader = grade_prompt | structured_grader
 ###############
 ###RAG Chain###
 ###############
-rag_chain = hub.pull('rlm/rag-prompt') | llm | StrOutputParser()
+rag_chain = ChatPromptTemplate([("system", prompt['prompt-rag-chain'])]) | llm | StrOutputParser()
 
 ####################
 ###Query Rewriter###
@@ -197,7 +198,7 @@ def agent(state):
     """
     print("---CALL AGENT---")
     messages = state["question"]
-    model = ChatOpenAI(temperature=0, streaming=True, model="gpt-4-turbo") | StrOutputParser()
+    model = ChatOpenAI(temperature=0, streaming=True, model=AGENT_MODEL) | StrOutputParser()
     response = model.invoke(messages)
     # We return a list, because this will get added to the existing list
     return {"generated": [response]}
