@@ -6,3 +6,6 @@
 secrets/
 
 test.ipynb
+
+*/__pycache__/
+*.pyc
