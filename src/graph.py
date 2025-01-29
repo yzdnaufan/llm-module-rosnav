@@ -6,10 +6,13 @@ from typing_extensions import List, TypedDict, Literal
 from langchain import hub
 
 from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
 
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
@@ -32,7 +35,7 @@ from models.command import Translation
 
 import yaml
 
-load_dotenv()
+load_dotenv(dotenv_path='.env')
 
 # Ensure required environment variables are set
 required_vars = ['LANGCHAIN_API_KEY', 'OPENAI_API_KEY', 'TAVILY_API_KEY' ]
@@ -41,13 +44,13 @@ for var in required_vars:
         raise EnvironmentError(f"Missing required environment variable: {var}")
 
 # Define constants
-AGENT_MODEL = os.environ.get('AGENT_MODEL') | 'gpt-3.5-turbo'
-GENERATE_MODEL = os.environ.get('GENERATE_MODEL')  | 'gpt-3.5-turbo' # Agent that used in all flow of the graph
-GRADE_MODEL = os.environ.get('GRADE_MODEL') | 'gpt-3.5-turbo'
-EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL') | 'text-embedding-3-large'
-TEMPERATURE = os.environ.get('TEMPERATURE') | 0.5
-MAX_RETRIES = os.environ.get('MAX_RETRIES') | 2
-MAX_TOKENS = os.environ.get('MAX_TOKENS') | 100
+AGENT_MODEL = os.environ.get('AGENT_MODEL') or 'gpt-3.5-turbo'
+GENERATE_MODEL = os.environ.get('GENERATE_MODEL')  or 'gpt-3.5-turbo' # Agent that used in all flow of the graph
+GRADE_MODEL = os.environ.get('GRADE_MODEL') or 'gpt-3.5-turbo'
+EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL') or 'text-embedding-3-large'
+TEMPERATURE = os.environ.get('TEMPERATURE') or 0.5
+MAX_RETRIES = os.environ.get('MAX_RETRIES') or 2
+MAX_TOKENS = os.environ.get('MAX_TOKENS') or 100
 
 # Prompt
 # Load the YAML file
@@ -56,9 +59,9 @@ with open('prompt.yaml', 'r') as file:
 
 
 # Now you can safely use os.environ to access your environment variables
-langchain_api = os.environ['LANGCHAIN_API_KEY']
-openai_api = os.environ['OPENAI_API_KEY']
-tavily_api = os.environ['TAVILY_API_KEY']
+langchain_api = os.environ.get('LANGCHAIN_API_KEY')
+openai_api = os.environ.get('OPENAI_API_KEY')
+tavily_api = os.environ.get('TAVILY_API_KEY')
 
 # Initialize the ChatOpenAI object
 
@@ -84,7 +87,7 @@ grade_llm = ChatOpenAI(
 )
 
 # # Initialize the TavilySearchResults object
-web_search_tool = TavilySearchResults(api_key=tavily_api, max_results=3)
+web_search_tool = TavilySearchResults(api_key=tavily_api, max_results=3, api_wrapper=TavilySearchAPIWrapper())
 
 ##############
 ####Router####
@@ -115,7 +118,7 @@ for filename in os.scandir(docs_path):
     for page in loader.lazy_load():
         docs_list.append(page)
 text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    chunk_size=100, chunk_overlap=50
+    chunk_size=1000, chunk_overlap=100
 )
 doc_splits = text_splitter.split_documents(docs_list)
 # Add to vectorDB
@@ -308,8 +311,10 @@ def web_search(state):
     print("---WEB SEARCH---")
     question = state["question"]
     try :
-        docs = web_search_tool.invoke({"query": question})
-        web_res = '\n\n'.join([d['content'] for d in docs])
+        res_search = web_search_tool.invoke(question)
+        print(tavily_api)
+        print(res_search)
+        web_res = '\n\n'.join(d['content'] for d in res_search)
         web_res = Document(page_content=web_res)
     except Exception as e:
         print(e)
