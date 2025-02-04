@@ -1,9 +1,11 @@
 import os
 
 from typing import Any, Dict
-from typing_extensions import List, TypedDict, Literal
 
-from langchain import hub
+from dotenv import load_dotenv
+
+from datetime import datetime, timezone, timedelta
+
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
@@ -15,7 +17,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
 
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, RemoveMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import create_retriever_tool
@@ -27,13 +29,16 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langgraph.graph import START, StateGraph, END
 
+from langgraph.checkpoint.memory import MemorySaver
+
 from pydantic import BaseModel, Field
 
-from dotenv import load_dotenv
+import yaml
 
 from models.command import Translation
+from models.route_query import RouteQuery
+from models.GraphState import GraphState
 
-import yaml
 
 load_dotenv(dotenv_path='.env')
 
@@ -42,6 +47,9 @@ required_vars = ['LANGCHAIN_API_KEY', 'OPENAI_API_KEY', 'TAVILY_API_KEY' ]
 for var in required_vars:
     if var not in os.environ:
         raise EnvironmentError(f"Missing required environment variable: {var}")
+
+# Define the configuration
+config = {"configurable": {"thread_id": "abc123"}}
 
 # Define constants
 AGENT_MODEL = os.environ.get('AGENT_MODEL') or 'gpt-3.5-turbo'
@@ -86,27 +94,10 @@ grade_llm = ChatOpenAI(
     max_tokens=MAX_TOKENS
 )
 
+memory = MemorySaver()
+
 # # Initialize the TavilySearchResults object
 web_search_tool = TavilySearchResults(api_key=tavily_api, max_results=3, api_wrapper=TavilySearchAPIWrapper())
-
-##############
-####Router####
-##############
-class RouteQuery(BaseModel):
-    """Route a user query to the most relevant datasource."""
-
-    datasource: Literal["vectorstore", "translate_to_command", "web_search", 'agent'] = Field(
-        ...,
-        description="Given a user question choose to route it to web search, robot command translation, or a vectorstore. If no match route to agent",
-    )
-structured_llm_router = llm.with_structured_output(RouteQuery)
-route_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", prompt['routing-prompt']),
-        ("human", "{question}"),
-    ]
-)
-question_router = route_prompt | structured_llm_router
 
 #############
 ##Retriever##
@@ -155,7 +146,7 @@ retrieval_grader = grade_prompt | structured_grader
 ###############
 ###RAG Chain###
 ###############
-rag_chain = ChatPromptTemplate([("system", prompt['prompt-rag-chain'])]) | llm | StrOutputParser()
+rag_chain = ChatPromptTemplate([("system", prompt['prompt-rag-chain'])]) | llm 
 
 ####################
 ###Query Rewriter###
@@ -166,28 +157,60 @@ rewrite_prompt = ChatPromptTemplate.from_messages(
         ("human", "Initial question: {question} \n\n Improved question: "),
     ]
 )
-rewrite_chain = rewrite_prompt | llm | StrOutputParser()
-
-#################
-###Graph State###
-#################
-class GraphState(TypedDict):
-    """
-    GraphState is a TypedDict that represents the state of a graph.
-    Attributes:
-        question (str): A question provided by the user.
-        generated (str): A string indicating the generated LLM string.
-        document (List[str]): A list of strings representing the document retrieved.
-        retries (int): An integer representing the number of retries.
-    """
-    question: str
-    generated: str
-    documents: List[str]
-    retries: int = 0
+rewrite_chain = rewrite_prompt | llm 
 
 ################
 ###Graph Flow###
 ################
+
+######### Nodes #########
+
+
+# First Call Model
+# Define the function that calls the model
+def call_model(state):
+    print("---CALL MODEL----")
+
+    # system_prompt = (
+    #     "You are a helpful assistant. "
+    #     "Answer all questions to the best of your ability. "
+    #     "The provided chat history includes a summary of the earlier conversation."
+    # )
+    # system_message = SystemMessage(content=system_prompt)
+    message_history = state["messages"][:-1]  # exclude the most recent user input
+
+    # Summarize the messages if the chat history reaches a certain size
+    if len(message_history) >= 8:
+        last_human_message = state["messages"][-1]
+        summary_prompt = (
+            "Distill the above chat messages into a summary message. "
+            "Include as many specific details as you can."
+        )
+        summary_message = llm.invoke(
+            message_history + [HumanMessage(content=summary_prompt)]
+        )
+
+        # Re-add user message
+        human_message = HumanMessage(content=last_human_message.content)
+        # Delete messages that we no longer want to show up
+        delete_messages = [RemoveMessage(id=m.id) for m in state["messages"]]
+        # Call the model with summary & response
+        # response = llm.invoke([system_message, summary_message, human_message])
+        # message_updates = [summary_message, human_message, response] + delete_messages
+
+        message_updates = [summary_message, human_message] + delete_messages
+        print(message_updates)
+        return {"messages": message_updates}
+    else:
+        # message_updates = llm.invoke([system_message] + state["messages"])
+        return {"messages": state["messages"]}
+
+    # print(message_updates)
+    # return {"messages": message_updates}
+
+
+# Agent
+
 def agent(state):
     """
     Invokes the agent model to generate a response based on the current state. Given
@@ -200,11 +223,20 @@ def agent(state):
         dict: The updated state with the agent response appended to messages
     """
     print("---CALL AGENT---")
-    messages = state["question"]
-    model = ChatOpenAI(temperature=0, streaming=True, model=AGENT_MODEL) | StrOutputParser()
+    messages = state["messages"]
+    model = ChatOpenAI(temperature=0.3, model="gpt-4o")
     response = model.invoke(messages)
     # We return a list, because this will get added to the existing list
-    return {"generated": [response]}
+    return {"generated": [response.content], "messages" : response}
+
+# def delete_messages(state):
+#     messages = state["messages"]
+#     tnow = datetime.now(timezone.utc)
+#     d = state['expiry']
+#     if len(messages) > 10:
+#         return {"messages": [RemoveMessage(id=m.id) for m in messages[:-4]]}
+#     if state['timestamp'] - tnow > d :
+#         return {"messages": [RemoveMessage(id=m.id) for m in messages], "timestamp": datetime.now(timezone.utc)}
 
 def retrieve(state):
     """
@@ -217,10 +249,10 @@ def retrieve(state):
         dict: The updated state with the retrieved documents
     """
     print("---RETRIEVE---")
-    question = state["question"]
+    question = state["messages"][-1]
     retry = state["retries"]
     print("RETRY:", retry)
-    docs = retriever.invoke(question)
+    docs = retriever.invoke(question.content)
     return {"documents": [doc.page_content for doc in docs]}
 
 def generate(state):
@@ -234,11 +266,11 @@ def generate(state):
         dict: The updated state with the generated answer
     """
     print("---GENERATE---")
-    question = state["question"]
+    question = state["messages"][-1]
     docs = state["documents"]
     # RAG chain
-    result = rag_chain.invoke({'context': docs, 'question': question})
-    return {"question": question , "document": docs, "generated": result}
+    result = rag_chain.invoke({'context': docs, 'question': question.content})
+    return {"question": question.content , "document": docs, "generated": result.content, 'messages': result}
 
 def grade_docs(state):
     """
@@ -251,21 +283,21 @@ def grade_docs(state):
         dict: The updated state with the graded relevance
     """
     print("---GRADE---")
-    question = state["question"]
+    question = state["messages"][-1]
     docs = state["documents"]
 
     filtered_docs = []
     # Score each docs
     for d in docs:
         doc_txt = d
-        score = retrieval_grader.invoke({"question": question, "document": doc_txt})
+        score = retrieval_grader.invoke({"question": question.content, "document": doc_txt})
         if score.binary_score == "yes":
             print('---DOC RELEVANT---')
             filtered_docs.append(d)
         else:
             print('---DOC NOT RELEVANT---')
             continue
-    return {"documents": filtered_docs, "question": question}
+    return {"documents": filtered_docs}
 
 def rewrite_query(state):
     """
@@ -278,10 +310,10 @@ def rewrite_query(state):
         dict: The updated state with the rewritten query
     """
     print("---REWRITE---")
-    question = state["question"]
+    question = state["messages"][-1]
     
-    result = rewrite_chain.invoke({"question": question})
-    return {"question": result, "retries": state["retries"] + 1}
+    result = rewrite_chain.invoke({"question": question.content})
+    return {"question": result.content, "retries": state["retries"] + 1, "messages": result}
 
 def translate_to_command(state):
     """
@@ -294,9 +326,9 @@ def translate_to_command(state):
         dict: The updated state with the translated command
     """
     print("---TRANSLATE---")
-    question = state["question"]
+    question = state["messages"]
     result = llm.with_structured_output(Translation).invoke(question)
-    return {"generated": result, "question": question}
+    return {"generated": result, 'messages': AIMessage(content="Oke, sudah saya terima perintahnya")}
 
 def web_search(state):
     """
@@ -309,12 +341,10 @@ def web_search(state):
         dict: The updated state with the web search results
     """
     print("---WEB SEARCH---")
-    question = state["question"]
+    question = state["messages"][-1]
     try :
-        res_search = web_search_tool.invoke(question)
-        print(tavily_api)
-        print(res_search)
-        web_res = '\n\n'.join(d['content'] for d in res_search)
+        docs = web_search_tool.invoke({"query": question.content})
+        web_res = '\n\n'.join([d['content'] for d in docs])
         web_res = Document(page_content=web_res)
     except Exception as e:
         print(e)
@@ -337,8 +367,29 @@ def route_question(state):
     """
     print("---ROUTE---")
     print("--STATE--", state)
-    question = state["question"]
-    result = question_router.invoke({"question": question})
+    llm = ChatOpenAI(model='gpt-4o', temperature=0.3)
+    structured_llm_router = llm.with_structured_output(RouteQuery)
+
+    # Prompt
+    system = """You tasked to route a user query to a memory or vectorstore or web search or robot command translation tools  .
+    If you could answer it immediately please answer it. Priorities answering based on memory and in the language used.
+    The vectorstore contains documents related to DTETI lecturer, vision and mission, and its advisory boards.
+    Use the vectorstore for questions on these topics. Otherwise, use web-search.
+    Use robot command translation tool when provided query is to navigate.
+"""
+
+    question = state["messages"]
+    if question[0] is not SystemMessage:
+        question.insert(0, SystemMessage(content=system))
+    
+    result = structured_llm_router.invoke(question)
+
+    print("Is Answerable by memory:", result.answer)
+
+    if result.answer == 'yes' :
+        print('---MEMORY---')
+        return 'memory'
+    
     if result.datasource == 'vectorstore':
         print('---VECTORSTORE---')
         return 'vectorstore'
@@ -348,7 +399,10 @@ def route_question(state):
     elif result.datasource == 'web_search':
         print('---WEB SEARCH---')
         return 'web_search'
-    else:
+    elif result.datasource == 'agent':
+        print('---AGENT---')
+        return 'agent'
+    else :
         return 'agent'
     
 def decide_to_generate(state):
@@ -363,7 +417,7 @@ def decide_to_generate(state):
     """
     print("---DECIDING TO GENERATE---")
     docs = state["documents"]
-    if state["retries"] >= 2:
+    if state["retries"] >= 1:
         print('---RETRIES EXCEEDED WEB SEARCH WILL BE USED---')
         return 'web_search'
     if len(docs) > 0:
@@ -389,9 +443,11 @@ def chat(text:str) -> Dict[str, Any] :
         'text' : text,
         'response' : response
     }
+
 workflow = StateGraph(GraphState)
 
 # Define the nodes
+workflow.add_node(call_model) # first init
 workflow.add_node("web_search", web_search)  # web search
 workflow.add_node("retrieve", retrieve)  # retrieve
 workflow.add_node("translate_to_command", translate_to_command)  # translate to command
@@ -399,18 +455,24 @@ workflow.add_node("grade_docs", grade_docs)  # grade documents
 workflow.add_node("generate", generate)  # generate
 workflow.add_node("rewrite_query", rewrite_query)  # rewrite query
 workflow.add_node("agent", agent)  # agent
+# workflow.add_node(delete_messages) # delete messages memory
 
 # Build graph
+
+workflow.add_edge(START, "call_model")
+
 workflow.add_conditional_edges(
-    START,
+    "call_model",
     route_question,
     {
         "web_search": "web_search",
         "vectorstore": "retrieve",
         "translate_to_command": "translate_to_command",
+        'memory': 'agent',
         'agent': 'agent'
     },
 )
+
 workflow.add_edge("web_search", "generate")
 workflow.add_edge("retrieve", "grade_docs")
 workflow.add_conditional_edges(
@@ -423,12 +485,21 @@ workflow.add_conditional_edges(
     },
 )
 workflow.add_edge("rewrite_query", "retrieve")
+# workflow.add_edge("generate", "delete_messages")
+# workflow.add_edge("translate_to_command", "delete_messages")
+# workflow.add_edge("agent", "delete_messages")
 workflow.add_edge("generate", END)
 workflow.add_edge("translate_to_command", END)
 workflow.add_edge("agent", END)
 
+# workflow.add_edge("delete_messages", END)
+
+
 # Compile
-app = workflow.compile()
+app = workflow.compile(checkpointer=memory)
+
+# Compile
+app = workflow.compile(checkpointer=memory)
 
 def invoke_graph(message:str) -> Dict[str,Any] :
     """
@@ -438,10 +509,23 @@ def invoke_graph(message:str) -> Dict[str,Any] :
     Returns:
         Dict[str, Any]: The result from the graph application.
     """
-    
-    state = {
-        "question": message,
-        "retries": 0
-    }
-    result = app.invoke(state)
+    try :
+        app.get_state(config=config).values['timestamp']
+        state = {
+            "question": message,
+            "messages": [HumanMessage(content=message)], 
+            "retries": 0
+        }
+    except:
+        time = datetime.now(timezone.utc)
+        delta = timedelta(minutes=5)
+        state = {
+            "question": message,
+            "messages": [HumanMessage(content=message)], 
+            "retries": 0,
+            "timestamp" : time,
+            "expiry": delta
+        }
+
+    result = app.invoke(state, config=config)
     return result
